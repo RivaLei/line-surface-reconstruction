@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Run from any working directory.
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# imagecols.npy 依赖 NumPy；优先使用用户指定/当前环境，缺失时尝试本机 Anaconda。
+custom_python="${PYTHON:-python3}"
+if [[ -z "${PYTHON:-}" ]] && ! "$custom_python" -c 'import numpy' 2>/dev/null; then
+    if [[ -x /home/lz/anaconda/bin/python ]]; then
+        custom_python=/home/lz/anaconda/bin/python
+    fi
+fi
+exec "$custom_python" "$script_dir/custom_demo.py" "$@"

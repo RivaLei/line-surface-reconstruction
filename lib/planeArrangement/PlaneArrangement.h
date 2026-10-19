@@ -92,8 +92,13 @@ class PlaneArrangement : public Polyhedral_complex_3::Arrangement_3<Kernel>
 {
 public:
 
-    explicit PlaneArrangement(const CGAL::Bbox_3 &_bbox, const PrimitiveSet &_myPrimitiveSet, double _voxelSize = 0., bool _verbose = false);
+    explicit PlaneArrangement(const CGAL::Bbox_3 &_bbox, const PrimitiveSet &_myPrimitiveSet, double _voxelSize = 0., bool _verbose = false, const std::string& checkpointDirectory = "");
     virtual ~PlaneArrangement();
+
+    void saveGeometryCheckpoint(const std::string& path);
+    void loadGeometryCheckpoint(const std::string& path);
+    size_t loadWeightCheckpoint(const std::string& path);
+    void saveWeightCheckpoint(const std::string& path, size_t nextLine);
 
     /* I/O methods */
     void saveArrangementAsPly(std::string fileName);

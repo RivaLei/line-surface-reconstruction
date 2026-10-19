@@ -16,7 +16,7 @@ public:
     ~ArrangementToMosek();
 
     // Setting the mosek problem and solving it
-    std::pair<std::vector<size_t>, std::map<int, int>> setAndSolve();
+    std::pair<std::vector<size_t>, std::map<int, int>> setAndSolve(const std::string& checkpointPath = "");
 
     // Getters
     int getNu(PlaneArrangement::Face_handle cell_handle);

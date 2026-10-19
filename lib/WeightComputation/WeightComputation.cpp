@@ -1,12 +1,24 @@
 #include "WeightComputation.h"
+#include "Checkpoint.h"
 
 using namespace std;
 
-void computeWeights(PlaneArrangement &arr, const LineSet &allLines, double sigma, bool verbose)
+void computeWeights(PlaneArrangement &arr, const LineSet &allLines, double sigma, bool verbose, const std::string& checkpointPath, size_t batchSize)
 {
-    int nbLinesProcessed = 0;
+    size_t firstLine = 0;
+    if (!checkpointPath.empty() && checkpoint::exists(checkpointPath)) {
+        firstLine = arr.loadWeightCheckpoint(checkpointPath);
+        if (firstLine > allLines.size()) throw runtime_error("Invalid weight checkpoint progress");
+        cout << "[resume] Weights: " << firstLine << "/" << allLines.size() << " lines completed." << endl;
+    }
+    if (batchSize == 0) throw runtime_error("Checkpoint batch size must be positive");
+    int nbLinesProcessed = int(firstLine);
+    // A barrier at each batch boundary ensures all updates are complete before
+    // saving. An interrupted batch is recomputed from the previous checkpoint.
+    for (size_t batch = firstLine; batch < allLines.size(); batch += batchSize) {
+    const size_t end = std::min(batch + batchSize, allLines.size());
 #pragma omp parallel for schedule(dynamic, 1)
-    for(size_t l_id=0; l_id < allLines.size(); l_id++)
+    for(size_t l_id=batch; l_id < end; l_id++)
     {
         // If the line is not associated to a primitive, there is nothing to do
         if(allLines[l_id].getAssociatedPrimitives().empty()) continue;
@@ -102,6 +114,12 @@ void computeWeights(PlaneArrangement &arr, const LineSet &allLines, double sigma
         if (verbose)
             cout << "Processed line " << nbLinesProcessed << " out of " << allLines.size() << "." << endl;
     }
+    if (!checkpointPath.empty()) {
+        arr.saveWeightCheckpoint(checkpointPath, end);
+        cout << "[checkpoint] Weights: " << end << "/" << allLines.size() << " lines saved." << endl;
+    }
+    }
+
 }
 
 Segment projectSegmentOnPlanesIntersection(const Segment& curSegment, const Plane& plane_0, const Plane& plane_1)

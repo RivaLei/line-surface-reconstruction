@@ -2,10 +2,15 @@
 #include "jsonInput.h"
 #include "WeightComputation.h"
 #include "ArrangementToMosek.h"
+#include <fstream>
+#include <sys/stat.h>
+#include <cerrno>
+#include <cstdint>
+#include "Checkpoint.h"
 
 using namespace std;
 
-int main(int argc, char* argv[])
+int runMain(int argc, char* argv[])
 {
     //Create parsing options
     op::OptionParser opt;
@@ -22,6 +27,10 @@ int main(int argc, char* argv[])
     opt.add_option("-ext", "--exterior", "Exterior scene mode (-ext or -int REQUIRED)");
     opt.add_option("-int", "--interior", "Interior scene mode (-ext or -int REQUIRED)");
     opt.add_option("-np", "--max_number_planes", "(Optional) Max number of planes to insert", "-1");
+    opt.add_option("-sa", "--save-arrangement", "Save intermediate plane arrangement to output directory/arrangement.ply before computing weights");
+
+    opt.add_option("-nc", "--no-checkpoints", "Disable automatic checkpoint saving/loading");
+    opt.add_option("-cb", "--checkpoint-batch", "Save weights after this many input lines", "100");
 
     //Parsing options
     bool correctParsing = opt.parse_options(argc, argv);
@@ -71,6 +80,45 @@ int main(int argc, char* argv[])
     double voxel_size      = op::str2double(opt["-vs"]);
     int    maxNumberPlanes = op::str2int(opt["-np"]);
 
+    int checkpointBatch = op::str2int(opt["-cb"]);
+    if (checkpointBatch <= 0) throw runtime_error("Checkpoint batch must be positive");
+    string checkpointDirectory;
+    unique_ptr<checkpoint::DirectoryLock> checkpointLock;
+    if (!op::str2bool(opt["-nc"])) {
+        // Cache identity binds input bytes, all geometry/optimization parameters,
+        // and the actual executable. Changed inputs/builds cannot reuse stale handles.
+        auto hashFile = [](const string& path) {
+            ifstream stream(path, ios::binary);
+            if (!stream) throw runtime_error("Cannot fingerprint " + path);
+            uint64_t hash = 14695981039346656037ULL;
+            char buffer[65536];
+            while (stream.read(buffer, sizeof(buffer)) || stream.gcount())
+                for (streamsize i = 0; i < stream.gcount(); ++i) { hash ^= static_cast<unsigned char>(buffer[i]); hash *= 1099511628211ULL; }
+            if (!stream.eof()) throw runtime_error("Cannot fingerprint " + path);
+            return hash;
+        };
+        checkpoint::Json identity;
+        identity["format"] = 1;
+        identity["input_hash"] = hashFile(opt["-i"]);
+        identity["binary_hash"] = hashFile("/proc/self/exe");
+        identity["parameters"] = {cost_primitive, cost_visibility, cost_area, cost_edge, cost_corners, voxel_size, double(maxNumberPlanes), double(force_interior), double(force_exterior)};
+        uint64_t key = 14695981039346656037ULL;
+        for (unsigned char c : identity.dump()) { key ^= c; key *= 1099511628211ULL; }
+        ostringstream name; name << hex << key;
+        const string root = outputPath + "checkpoints";
+        auto directory = [](const string& path) {
+            if (mkdir(path.c_str(), 0777) != 0 && errno != EEXIST) throw runtime_error("Cannot create checkpoint directory: " + path);
+        };
+        directory(root);
+        checkpointDirectory = root + "/" + name.str();
+        directory(checkpointDirectory);
+        checkpointLock.reset(new checkpoint::DirectoryLock(checkpointDirectory + "/lock"));
+        const string manifest = checkpointDirectory + "/manifest.json";
+        if (checkpoint::exists(manifest) && checkpoint::read(manifest) != identity) throw runtime_error("Checkpoint identity mismatch");
+        checkpoint::write(manifest, identity);
+        cout << "Checkpoint directory: " << checkpointDirectory << endl;
+    }
+
     //Load input data
     PrimitiveSet myPrimitiveSet;
     LineSet myLineSet;
@@ -82,19 +130,64 @@ int main(int argc, char* argv[])
 
     //Make the plane arrangement, fill it and save it
     double bboxIncreaseFactor = 0.1;
-    PlaneArrangement myArrangement(myLineSet.getBbox(bboxIncreaseFactor), myPrimitiveSet, voxel_size, verbose);
+    PlaneArrangement myArrangement(myLineSet.getBbox(bboxIncreaseFactor), myPrimitiveSet, voxel_size, verbose, checkpointDirectory);
+
+    // Optional diagnostic geometry: all bounded arrangement facets, before weights
+    // and optimization. This is not the reconstructed surface or a restart checkpoint.
+    if (op::str2bool(opt["-sa"]))
+    {
+        const string arrangementPath = outputPath + "arrangement.ply";
+        // Check the destination before the potentially expensive mesh extraction.
+        ofstream destination(arrangementPath);
+        if (!destination)
+        {
+            cerr << "Cannot write intermediate arrangement: " << arrangementPath
+                 << ". Check that the output directory exists and is writable." << endl;
+            return EXIT_FAILURE;
+        }
+        destination.close();
+        cout << "Saving intermediate plane arrangement: " << arrangementPath << endl;
+        myArrangement.saveArrangementAsPly(arrangementPath);
+        ifstream savedArrangement(arrangementPath, ios::binary | ios::ate);
+        if (!savedArrangement || savedArrangement.tellg() <= 0)
+        {
+            cerr << "Failed to save intermediate plane arrangement: " << arrangementPath << endl;
+            return EXIT_FAILURE;
+        }
+        cout << "Intermediate plane arrangement saved; starting weight computation." << endl;
+    }
 
     //Compute the weights
-    computeWeights(myArrangement, myLineSet, 1., verbose);
+    computeWeights(myArrangement, myLineSet, 1., verbose,
+                   checkpointDirectory.empty() ? "" : checkpointDirectory + "/weights.json", checkpointBatch);
 
     //Optimization
     bool force_filled_bounding_box = force_interior;
     bool force_empty_bounding_box = force_exterior;
-    auto * mosekOptimizer = new ArrangementToMosek(myArrangement, cost_primitive,
-                                                   cost_visibility, cost_area, cost_edge, cost_corners, force_filled_bounding_box,
-                                                   force_empty_bounding_box, verbose);
-
-    auto optResults = mosekOptimizer->setAndSolve();
+    pair<vector<size_t>, map<int, int>> optResults;
+    const string solutionPath = checkpointDirectory.empty() ? "" : checkpointDirectory + "/solution.json";
+    if (!solutionPath.empty() && checkpoint::exists(solutionPath)) {
+        auto solution = checkpoint::read(solutionPath);
+        optResults.first = solution.at("labels").get<vector<size_t>>();
+        if (optResults.first.size() != size_t(myArrangement.number_of_cells())) throw runtime_error("Solution checkpoint geometry mismatch");
+        for (const auto& entry : solution.at("cell_to_variable"))
+            optResults.second[entry.at(0).get<int>()] = entry.at(1).get<int>();
+        cout << "[resume] Loaded completed optimization result." << endl;
+    } else {
+        ArrangementToMosek mosekOptimizer(myArrangement, cost_primitive, cost_visibility,
+                                        cost_area, cost_edge, cost_corners, force_filled_bounding_box,
+                                        force_empty_bounding_box, verbose);
+        optResults = mosekOptimizer.setAndSolve(checkpointDirectory.empty() ? "" : checkpointDirectory + "/model.json");
+        if (!solutionPath.empty()) {
+            checkpoint::Json solution;
+            solution["labels"] = optResults.first;
+            solution["cell_to_variable"] = checkpoint::Json::array();
+            for (const auto& entry : optResults.second)
+                solution["cell_to_variable"].push_back({entry.first, entry.second});
+            checkpoint::write(solutionPath, solution);
+            cout << "[checkpoint] Saved optimization result." << endl;
+        }
+    }
 
     std::ostringstream strs;
     strs << "cp_" << cost_primitive << "_cv_" << cost_visibility << "_ca_" << cost_area << "_ce_" <<
@@ -105,7 +198,14 @@ int main(int argc, char* argv[])
     cout << "out folder : " <<  outputPath + file_title + ".ply" << endl;
     myArrangement.savePlyFromLabel(outputPath + file_title + ".ply", optResults.second, optResults.first);
 
-    delete mosekOptimizer;
 
     return 0;
+}
+
+int main(int argc, char* argv[]) {
+    try { return runMain(argc, argv); }
+    catch (const std::exception& error) {
+        cerr << "Reconstruction failed: " << error.what() << endl;
+        return EXIT_FAILURE;
+    }
 }

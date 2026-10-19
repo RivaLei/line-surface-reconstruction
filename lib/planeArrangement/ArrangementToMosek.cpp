@@ -1,4 +1,5 @@
 #include "ArrangementToMosek.h"
+#include "Checkpoint.h"
 
 using namespace std;
 
@@ -446,21 +447,59 @@ void ArrangementToMosek::computeCornerTerm()
     }
 }
 
-pair<vector<size_t>, map<int, int>> ArrangementToMosek::setAndSolve()
+pair<vector<size_t>, map<int, int>> ArrangementToMosek::setAndSolve(const std::string& checkpointPath)
 {
-    //Computing the costs
-    if(verbose) cout << "Computing boundary term..." << endl;
-    computeBoundaryTerm();
-    if(verbose) cout << "Boundary term computed !" << endl;
-    if(verbose) cout << "Computing structural term..." << endl;
-    computeStructuralTerm();
-    if(verbose) cout << "Structural term computed !" << endl << "Computing visibility and area terms..." << endl;
-    computeVisibilityAndAreaTerms();
-    if(verbose) cout << "Visibility and area terms computed !" << endl << "Computing edge term..." << endl;
-    computeEdgeTerm();
-    if(verbose) cout << "Edge term computed !" << endl << "Computing corner term..." << endl;
-    computeCornerTerm();
-    if(verbose) cout << "Corner term computed !" << endl << "Forming linear program..." << endl;
+    int completedStage = 0;
+    if (!checkpointPath.empty() && checkpoint::exists(checkpointPath)) {
+        auto state = checkpoint::read(checkpointPath);
+        if (state.at("variable_count").get<int>() != nbVariables) throw runtime_error("Model checkpoint variable mismatch");
+        completedStage = state.at("stage").get<int>();
+        if (completedStage < 1 || completedStage > 5) throw runtime_error("Invalid model checkpoint stage");
+        auto weights = state.at("weights").get<vector<double>>();
+        if (weights.size() != size_t(nbVariables)) throw runtime_error("Invalid model checkpoint weights");
+        for (size_t i = 0; i < weights.size(); ++i) (*variablesWeights)[i] = weights[i];
+        constraintsCoorAndWeights.clear();
+        for (const auto& row : state.at("constraints")) {
+            vector<pair<size_t, double>> entries;
+            for (const auto& entry : row) entries.emplace_back(entry.at(0).get<size_t>(), entry.at(1).get<double>());
+            constraintsCoorAndWeights.push_back(std::move(entries));
+        }
+        constraintsUpperBounds = state.at("bounds").get<vector<double>>();
+        if (constraintsUpperBounds.size() != constraintsCoorAndWeights.size()) throw runtime_error("Invalid model checkpoint constraints");
+        cout << "[resume] Optimization terms: " << completedStage << "/5 completed." << endl;
+    }
+    const char* names[] = {"boundary", "structural", "visibility and area", "edge", "corner"};
+    // Save after each cost-construction stage; model checkpoints include the
+    // cumulative sparse constraints and objective, not the solver's internal state.
+    for (int stage = completedStage; stage < 5; ++stage) {
+        cout << "Computing " << names[stage] << "..." << endl;
+        switch (stage) {
+            case 0: computeBoundaryTerm(); break;
+            case 1: computeStructuralTerm(); break;
+            case 2: computeVisibilityAndAreaTerms(); break;
+            case 3: computeEdgeTerm(); break;
+            case 4: computeCornerTerm(); break;
+            default: break;
+        }
+        if (!checkpointPath.empty()) {
+            checkpoint::Json state;
+            state["stage"] = stage + 1;
+            state["variable_count"] = nbVariables;
+            vector<double> weights(nbVariables);
+            for (int i = 0; i < nbVariables; ++i) weights[i] = (*variablesWeights)[i];
+            state["weights"] = weights;
+            state["constraints"] = checkpoint::Json::array();
+            for (const auto& row : constraintsCoorAndWeights) {
+                auto entries = checkpoint::Json::array();
+                for (const auto& entry : row) entries.push_back({entry.first, entry.second});
+                state["constraints"].push_back(std::move(entries));
+            }
+            state["bounds"] = constraintsUpperBounds;
+            checkpoint::write(checkpointPath, state);
+            cout << "[checkpoint] Saved " << names[stage] << "." << endl;
+        }
+    }
+    if(verbose) cout << "Forming linear program..." << endl;
 
     // Create the variable
     variables = new Variable::t(variable("x", nbVariables, Domain::integral(Domain::greaterThan(0.0))));

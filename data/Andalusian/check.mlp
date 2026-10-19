@@ -1,0 +1,18 @@
+<!DOCTYPE MeshLabDocument>
+<MeshLabProject>
+ <MeshGroup>
+  <MLMesh label="cp_1_cv_1_ca_0_ce_0.1_cc_0.1.ply" filename="../../result/demo-Andalusian/cp_1_cv_1_ca_0_ce_0.1_cc_0.1.ply" visible="1" idInFile="-1">
+   <MLMatrix44>
+1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 
+</MLMatrix44>
+   <RenderingOption wireWidth="2" pointSize="3" pointColor="252 233 79 255" wireColor="64 64 64 255" solidColor="192 192 192 255" boxColor="234 234 234 255">100001000000000000000000000001010100000010100000000100111011110000001001</RenderingOption>
+  </MLMesh>
+  <MLMesh label="input_lines_from_residuals.obj" filename="input_lines_from_residuals.obj" visible="1" idInFile="-1">
+   <MLMatrix44>
+1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 
+</MLMatrix44>
+   <RenderingOption wireWidth="2" pointSize="3" pointColor="252 233 79 255" wireColor="85 255 127 255" solidColor="192 192 192 255" boxColor="234 234 234 255">001111000000010000000100000001000000000010100000110100111011110000001101</RenderingOption>
+  </MLMesh>
+ </MeshGroup>
+ <RasterGroup/>
+</MeshLabProject>

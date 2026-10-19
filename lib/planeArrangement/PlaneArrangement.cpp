@@ -1,9 +1,10 @@
 #include "PlaneArrangement.h"
+#include "Checkpoint.h"
 
 using namespace std;
 
 PlaneArrangement::PlaneArrangement(const CGAL::Bbox_3 &_bbox, const PrimitiveSet &_myPrimitiveSet, double _voxelSize,
-                                   bool _verbose) :
+                                   bool _verbose, const std::string& checkpointDirectory) :
         myPrimitiveSet(_myPrimitiveSet),
         bbox(_bbox),
         voxelSize(_voxelSize),
@@ -17,11 +18,40 @@ PlaneArrangement::PlaneArrangement(const CGAL::Bbox_3 &_bbox, const PrimitiveSet
     // Set the bounding box to the internal set
     set_bbox(bbox);
 
-    //Insert the voxel planes
-    insertVoxelPlanes();
+    const string prefix = checkpointDirectory.empty() ? "" : checkpointDirectory + "/arrangement";
+    if (!prefix.empty() && checkpoint::exists(prefix + ".json")) {
+        auto metadata = checkpoint::read(prefix + ".json");
+        loadGeometryCheckpoint(prefix + ".geometry.json");
+        for (const auto& entry : metadata.at("plane_mapping")) {
+            int handle = entry.at(0).get<int>(), primitive = entry.at(1).get<int>();
+            plane_handle_to_prim[handle] = primitive;
+            prim_to_plane_handle[primitive] = handle;
+        }
+        cout << "[resume] Loaded plane arrangement; rebuilding intersection tree." << endl;
+    } else {
+        insertVoxelPlanes();
+        insertPlanes(myPrimitiveSet);
+        if (!prefix.empty()) {
+            saveGeometryCheckpoint(prefix + ".geometry.json");
+            checkpoint::Json metadata;
+            metadata["plane_mapping"] = checkpoint::Json::array();
+            for (const auto& entry : plane_handle_to_prim)
+                metadata["plane_mapping"].push_back({entry.first, entry.second});
+            checkpoint::write(prefix + ".json", metadata);
+            cout << "[checkpoint] Saved plane arrangement." << endl;
+        }
+    }
 
-    //Insert the primitives
-    insertPlanes(myPrimitiveSet);
+    if (verbose) cout << "Building the intersection tree..." << endl;
+    buildTree();
+    if (verbose) cout << "Intersection tree computed !" << endl;
+
+    for (auto it = cells_begin(); it != cells_end(); ++it) {
+        it->cell_value_full_points = 0.;
+        it->cell_value_void_view_points = 0.;
+    }
+    for (auto it = facets_begin(); it != facets_end(); ++it)
+        it->facet_nbr_ray_vis_point = 0.;
 
     if (verbose) {
         cout << "Constructed plane arrangement bounding box : " << bbox;
@@ -72,11 +102,7 @@ void PlaneArrangement::insertPlanes(const PrimitiveSet &myPrimitiveSet) {
     }
     if (verbose) {
         cout << "Insertion of the primitives finished." << endl;
-        cout << "Building the intersection tree..." << endl;
     }
-    buildTree(); // Build the intersection tree;
-    if(verbose)
-        cout << "Intersection tree computed !" << endl;
 }
 
 void PlaneArrangement::saveArrangementAsPly(string fileName) {
@@ -517,4 +543,141 @@ void PlaneArrangement::insertStructuralCost(const TripletCell &structCells, doub
 const map<TripletCell, double>& PlaneArrangement::getStructuralCosts() const
 {
     return structuralCosts;
+}
+
+// Weights are saved separately: the external arrangement serializer does not
+// promise to preserve application-specific fields or structural-cost maps.
+void PlaneArrangement::saveWeightCheckpoint(const string& path, size_t nextLine) {
+    checkpoint::Json state;
+    state["next_line"] = nextLine;
+    state["cells"] = checkpoint::Json::array();
+    for (auto it = cells_begin(); it != cells_end(); ++it)
+        state["cells"].push_back({int(cell_handle(*it)), it->cell_value_full_points, it->cell_value_void_view_points});
+    state["facets"] = checkpoint::Json::array();
+    for (auto it = facets_begin(); it != facets_end(); ++it)
+        state["facets"].push_back({int(facet_handle(*it)), it->facet_nbr_ray_vis_point});
+    state["structural"] = checkpoint::Json::array();
+    for (const auto& item : structuralCosts)
+        state["structural"].push_back({get<0>(item.first), get<1>(item.first), get<2>(item.first), item.second});
+    state["texturial"] = checkpoint::Json::array();
+    for (const auto& item : texturialCosts)
+        state["texturial"].push_back({item.first.first, item.first.second, item.second});
+    checkpoint::write(path, state);
+}
+
+size_t PlaneArrangement::loadWeightCheckpoint(const string& path) {
+    auto state = checkpoint::read(path);
+    if (state.at("cells").size() != size_t(number_of_cells()) || state.at("facets").size() != size_t(number_of_facets()))
+        throw runtime_error("Weight checkpoint geometry mismatch");
+    size_t i = 0;
+    for (auto it = cells_begin(); it != cells_end(); ++it, ++i) {
+        const auto& entry = state.at("cells").at(i);
+        if (entry.at(0).get<int>() != int(cell_handle(*it))) throw runtime_error("Cell handles changed on load");
+        it->cell_value_full_points = entry.at(1).get<double>();
+        it->cell_value_void_view_points = entry.at(2).get<double>();
+    }
+    i = 0;
+    for (auto it = facets_begin(); it != facets_end(); ++it, ++i) {
+        const auto& entry = state.at("facets").at(i);
+        if (entry.at(0).get<int>() != int(facet_handle(*it))) throw runtime_error("Facet handles changed on load");
+        it->facet_nbr_ray_vis_point = entry.at(1).get<double>();
+    }
+    structuralCosts.clear();
+    for (const auto& entry : state.at("structural"))
+        structuralCosts[TripletCell(entry.at(0).get<int>(), entry.at(1).get<int>(), entry.at(2).get<int>())] = entry.at(3).get<double>();
+    texturialCosts.clear();
+    for (const auto& entry : state.at("texturial"))
+        texturialCosts[{entry.at(0).get<int>(), entry.at(1).get<int>()}] = entry.at(2).get<double>();
+    return state.at("next_line").get<size_t>();
+}
+
+namespace {
+std::string exactCoordinate(const Kernel::FT& value) {
+    std::ostringstream stream;
+#if defined(_OPENMP)
+    stream << value;
+#else
+    stream << CGAL::exact(value);
+#endif
+    return stream.str();
+}
+Kernel::FT readCoordinate(const checkpoint::Json& value) {
+    std::istringstream stream(value.get<std::string>());
+#if defined(_OPENMP)
+    Kernel::FT exact;
+#else
+    Kernel::FT::Exact_type exact;
+#endif
+    if (!(stream >> exact)) throw std::runtime_error("Invalid exact checkpoint coordinate");
+    return Kernel::FT(exact);
+}
+}
+
+// The external save/load uses low-precision text and serializes uninitialized
+// auxiliary fields. Save topology ourselves, with exact rational coordinates,
+// so resumed intersections use precisely the same geometry and face handles.
+void PlaneArrangement::saveGeometryCheckpoint(const string& path) {
+    checkpoint::Json state;
+    state["faces"] = checkpoint::Json::array();
+    for (int k = 0; k < _number_of_face_lists; ++k) {
+        auto faces = checkpoint::Json::array();
+        for (const auto& f : _face_lists[k]) {
+            checkpoint::Json item;
+            item["point"] = {exactCoordinate(f.point().x()), exactCoordinate(f.point().y()), exactCoordinate(f.point().z())};
+            item["info"] = f.info();
+            item["type"] = f.type;
+            item["bbox_adj"] = f.is_bbox_adj;
+            item["super"] = checkpoint::Json::array();
+            item["sub"] = checkpoint::Json::array();
+            for (auto h : f.superfaces()) item["super"].push_back(int(h));
+            for (auto h : f.subfaces()) item["sub"].push_back(int(h));
+            faces.push_back(std::move(item));
+        }
+        state["faces"].push_back(std::move(faces));
+    }
+    state["planes"] = checkpoint::Json::array();
+    for (const auto& p : _planes)
+        state["planes"].push_back({exactCoordinate(p.a()), exactCoordinate(p.b()), exactCoordinate(p.c()), exactCoordinate(p.d())});
+    state["plane_handles"] = checkpoint::Json::array();
+    for (auto h : _plane_handles) state["plane_handles"].push_back(int(h));
+    state["split"] = checkpoint::Json::array();
+    for (auto h : _split_ch) state["split"].push_back(int(h));
+    state["has_bbox"] = _has_bbox;
+    // These fields belong to optional external-library extensions; preserving
+    // them avoids relying on their defaults when loading cached topology.
+    state["consistent_orientation"] = consistent_orientation;
+    state["ref_a"] = ref_a; state["ref_b"] = ref_b;
+    state["ref_c"] = ref_c; state["ref_d"] = ref_d;
+    checkpoint::write(path, state);
+}
+
+void PlaneArrangement::loadGeometryCheckpoint(const string& path) {
+    auto state = checkpoint::read(path);
+    if (state.at("faces").size() != _number_of_face_lists) throw runtime_error("Invalid arrangement checkpoint face lists");
+    for (int k = 0; k < _number_of_face_lists; ++k) {
+        _face_lists[k].clear();
+        for (const auto& item : state.at("faces").at(k)) {
+            Face f;
+            const auto& p = item.at("point");
+            f.point() = Point(readCoordinate(p.at(0)), readCoordinate(p.at(1)), readCoordinate(p.at(2)));
+            f.info() = item.at("info").get<int>();
+            f.type = item.at("type").get<int>();
+            f.is_bbox_adj = item.at("bbox_adj").get<bool>();
+            f.to_draw = false;
+            for (const auto& h : item.at("super")) f.superfaces().push_back(Face_handle(h.get<int>()));
+            for (const auto& h : item.at("sub")) f.subfaces().push_back(Face_handle(h.get<int>()));
+            _face_lists[k].push_back(std::move(f));
+        }
+    }
+    _planes.clear();
+    for (const auto& p : state.at("planes"))
+        _planes.emplace_back(readCoordinate(p.at(0)), readCoordinate(p.at(1)), readCoordinate(p.at(2)), readCoordinate(p.at(3)));
+    _plane_handles.clear();
+    for (const auto& h : state.at("plane_handles")) _plane_handles.push_back(Plane_handle(h.get<int>()));
+    _split_ch.clear();
+    for (const auto& h : state.at("split")) _split_ch.insert(Face_handle(h.get<int>()));
+    _has_bbox = state.at("has_bbox").get<bool>();
+    consistent_orientation = state.at("consistent_orientation").get<vector<bool>>();
+    ref_a = state.at("ref_a").get<vector<double>>(); ref_b = state.at("ref_b").get<vector<double>>();
+    ref_c = state.at("ref_c").get<vector<double>>(); ref_d = state.at("ref_d").get<vector<double>>();
 }

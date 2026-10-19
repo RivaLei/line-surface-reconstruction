@@ -22,9 +22,24 @@ add_definitions(-DTEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/")
 link_directories(external/PolyhedralComplex)
 
 #CGAL
-set(CGAL_DIR external/cgal/build)
-find_package(CGAL 4.11 REQUIRED)
+# Keep the CGAL version used by this project separate from the system CGAL.
+# An explicit -DCGAL_DIR=... still takes precedence.
+if(NOT CGAL_DIR)
+    get_filename_component(_CGAL_DEFAULT_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../third_/cgal-4.11.3/lib/CGAL" ABSOLUTE)
+    set(CGAL_DIR "${_CGAL_DEFAULT_DIR}" CACHE PATH
+        "Directory containing the CGAL 4.11.3 package configuration" FORCE)
+endif()
 set(CGAL_DONT_OVERRIDE_CMAKE_FLAGS TRUE CACHE BOOL "")
+# CGAL 4.11.3's package-version file reports 4.11.1000, so check the
+# actual release version exported by CGALConfig.cmake after discovery.
+find_package(CGAL 4.11 REQUIRED)
+if(NOT CGAL_VERSION VERSION_EQUAL "4.11.3")
+    message(FATAL_ERROR
+        "This project requires CGAL 4.11.3; found ${CGAL_VERSION} in ${CGAL_DIR}. "
+        "Set CGAL_DIR to the third_/cgal-4.11.3/lib/CGAL directory.")
+endif()
+message(STATUS "Project CGAL: ${CGAL_VERSION} (${CGAL_DIR})")
 include( ${CGAL_USE_FILE} )
 list(APPEND RECONS_LIBS ${CGAL_LIBRARIES})
 

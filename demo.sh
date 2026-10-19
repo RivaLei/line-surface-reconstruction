@@ -14,22 +14,27 @@
 
 # Andalusian
 
-build/line_based_recons -i data/Andalusian/input_lines_from_residuals.json -o data/ -cp 1 -cv 1 -ca 0 -ce 0.1 -cc 0.1 -ext -v
+mkdir -p result/demo-Andalusian
+build/line_based_recons -i data/Andalusian/input_lines_from_residuals.json -o result/demo-Andalusian/ -cp 1 -cv 1 -ca 0 -ce 0.1 -cc 0.1 -ext -v
 
 # Barn
 
 # The line output from Line3d++ is very noisy for this example. Therefore it requires a strong regularization.
 
-build/line_based_recons -i data/Barn/input_lines_from_residuals.json -o data/ -cp 10 -cv 5 -ca 0 -ce 10 -cc 10 -ext -v
+mkdir -p result/demo-Barn
+build/line_based_recons -i data/Barn/input_lines_from_residuals.json -o result/demo-Barn/ -cp 10 -cv 5 -ca 0 -ce 10 -cc 10 -ext -v
 
 # Bridge
 
-build/line_based_recons -i data/Bridge/input_lines_from_residuals.json -o data/ -cp 1 -cv 1 -ca 0 -ce 0.1 -cc 0.1 -int -v
+mkdir -p result/demo-Bridge
+build/line_based_recons -i data/Bridge/input_lines_from_residuals.json -o result/demo-Bridge/ -cp 1 -cv 1 -ca 0 -ce 0.1 -cc 0.1 -int -v
 
 # HouseInterior
 
-build/line_based_recons -i data/HouseInterior/input_lines_from_residuals.json -o data/ -cp 10 -cv 1 -ca 0 -ce 0.01 -cc 0.1 -int -v
+mkdir -p result/demo-HouseInterior
+build/line_based_recons -i data/HouseInterior/input_lines_from_residuals.json -o result/demo-HouseInterior/ -cp 10 -cv 1 -ca 0 -ce 0.01 -cc 0.1 -int -v
 
 # TimberFrame
 
-build/line_based_recons -i data/TimberFrame/input_lines_from_residuals.json -o data/ -cp 1 -cv 1 -ca 0 -ce 1 -cc 1 -ext -v
+mkdir -p result/demo-TimberFrame
+build/line_based_recons -i data/TimberFrame/input_lines_from_residuals.json -o result/demo-TimberFrame/ -cp 1 -cv 1 -ca 0 -ce 1 -cc 1 -ext -v

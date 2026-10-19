@@ -1,0 +1,92 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Configure demo (Debug)",
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "-S",
+                "${workspaceFolder}",
+                "-B",
+                "${workspaceFolder}/build-debug",
+                "-DCMAKE_BUILD_TYPE=Debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "MOSEK_DIR": "${workspaceFolder}/../../third_/mosek",
+                    "MOSEKLM_LICENSE_FILE": "${workspaceFolder}/../../third_/mosek/mosek.lic",
+                    "LD_LIBRARY_PATH": "${workspaceFolder}/../../third_/mosek/8/tools/platform/linux64x86/bin:${env:LD_LIBRARY_PATH}"
+                }
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Create demo output directories",
+            "type": "process",
+            "command": "mkdir",
+            "args": [
+                "-p",
+                "${workspaceFolder}/result/demo-Andalusian",
+                "${workspaceFolder}/result/demo-Barn",
+                "${workspaceFolder}/result/demo-Bridge",
+                "${workspaceFolder}/result/demo-HouseInterior",
+                "${workspaceFolder}/result/demo-TimberFrame"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Build demo (Debug)",
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}/build-debug",
+                "--target",
+                "line_based_recons",
+                "--parallel",
+                "3"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "MOSEK_DIR": "${workspaceFolder}/../../third_/mosek",
+                    "MOSEKLM_LICENSE_FILE": "${workspaceFolder}/../../third_/mosek/mosek.lic",
+                    "LD_LIBRARY_PATH": "${workspaceFolder}/../../third_/mosek/8/tools/platform/linux64x86/bin:${env:LD_LIBRARY_PATH}"
+                }
+            },
+            "dependsOn": [
+                "Configure demo (Debug)",
+                "Create demo output directories"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Create custom sztu12 output directory",
+            "type": "process",
+            "command": "mkdir",
+            "args": [
+                "-p",
+                "${workspaceFolder}/result/demo-sztu12"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Build custom sztu12 (Debug)",
+            "dependsOn": [
+                "Build demo (Debug)",
+                "Create custom sztu12 output directory"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        }
+    ]
+}

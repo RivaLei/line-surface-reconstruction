@@ -3,7 +3,7 @@
 
 #include "PlaneArrangement.h"
 
-void computeWeights(PlaneArrangement &arr, const LineSet &allLines, double sigma, bool verbose=false);
+void computeWeights(PlaneArrangement &arr, const LineSet &allLines, double sigma, bool verbose=false, const std::string& checkpointPath="", size_t batchSize=100);
 
 Segment projectSegmentOnPlanesIntersection(const Segment& curSegment, const Plane& plane_0, const Plane& plane_1);
 

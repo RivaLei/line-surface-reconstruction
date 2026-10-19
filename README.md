@@ -20,18 +20,26 @@ Langlois, P. A., Boulch, A., & Marlet, R. <br>In 2019 International Conference o
 * Clone this repository: `git clone https://github.com/palanglois/line-surface-reconstruction.git`
 * Go to the directory: `cd line-surface-reconstruction`
 
-* CGAL : Version 4.11 is required:
+* CGAL : Version 4.11.3 is required. Keep this installation separate from the
+  system CGAL (for example, Ubuntu's CGAL 5.0.2). The default installation prefix
+  is `../../third_/cgal-4.11.3` relative to this repository; see
+  [CGAL version notes](../../third_/CGAL_VERSIONS.md) for local paths and diagnostics.
  
 ```
-git clone https://github.com/CGAL/cgal.git external/cgal
-cd external/cgal
+git clone https://github.com/CGAL/cgal.git ../../third_/CGAL-4.11.3
+cd ../../third_/CGAL-4.11.3
 git checkout releases/CGAL-4.11.3
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make
-cd ../../..
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$PWD/../cgal-4.11.3" \
+  -DWITH_CGAL_Qt5=OFF -DWITH_CGAL_ImageIO=OFF
+cmake --build build --parallel 4
+cmake --install build
+cd ../../line-based-structure/line-surface-reconstruction
 ```  
+
+For another installation location, configure the project with
+`-DCGAL_DIR=/path/to/cgal-4.11.3/lib/CGAL`. Do not add the old CGAL to global
+header or library search paths; other projects can continue using the system version.
 
 * Make a build directory: `mkdir build`
 * Go to the build directory: `cd build`
@@ -39,6 +47,8 @@ cd ../../..
 * Compile the project: `make` 
 
 ## Examples
+
+* 本机官方示例运行与 VS Code/GDB 调试步骤：[DEMO_DEBUG.md](DEMO_DEBUG.md)。
 
 * Out of the box examples are available in [demo.sh](https://github.com/palanglois/line-surface-reconstruction/blob/master/demo.sh)
 
@@ -90,4 +100,4 @@ If these licenses do not suit your needs, please get in touch with us.
     YEAR = {2019},
     MONTH = Sep,
     DOI = {10.1109/3DV.2019.00067},
-    } 
+    }
