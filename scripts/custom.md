@@ -77,3 +77,18 @@ LIMAP 目录：`/home/lz/project/limap-old/outputs/sztu12`。
 `custom_demo.py --prepare-only` 也会导出上述着色线云，但不启动重建，因此不会生成 arrangement.ply。需要平面划分时，运行 `./scripts/custom.sh reconstruct` 或 `./scripts/custom.sh all`；官方示例运行 `python3 scripts/test_demo.py`。
 
 不传模式时，`./scripts/custom.sh` 默认执行 `all`：重新准备 LIMAP 逐观测输入、输出着色线云，并继续重建和导出 `arrangement.ply`。
+
+## 包围盒来源
+
+`--bbox-source camera|line` 默认为 `camera`，包围盒包含线段端点和相机中心。
+`line` 仅用线段端点确定包围盒，相机观测仍保留用于可见性计算。两种模式均沿用 10% 包围盒扩展。
+
+```bash
+NAME=sztu12 BBOX_SOURCE=camera bash scripts/custom.sh reconstruct
+NAME=sztu12 BBOX_SOURCE=line bash scripts/custom.sh reconstruct
+bash scripts/custom.sh reconstruct --name sztu12 --bbox-source line
+```
+
+默认输出为 `result/demo-sztu12/`；线云模式输出为 `result/demo-sztu12_line_box/`。
+输入仍复用 `data/sztu12/`，无需重新准备数据。直接调用 C++ 程序时可使用
+`--bbox-source line`（或 `-bs line`），输出位置仍由 `-o` 指定。

@@ -15,13 +15,14 @@ public:
     void insert(const nlohmann::json &lineJson);
     
     /* Getter */
-    CGAL::Bbox_3 getBbox(double factor=0.) const;
+    CGAL::Bbox_3 getBbox(double factor=0., bool includeViewpoints=true) const;
 
     /* Setter */
     void setMaxNbPlanes(int _maxNbPlanes);
 
 private:
     CGAL::Bbox_3 bbox;
+    CGAL::Bbox_3 lineBbox;
     int maxNbPlanes;
 };
 

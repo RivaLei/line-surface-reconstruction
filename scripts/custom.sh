@@ -13,21 +13,22 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 obj_path="${OBJ:-/home/lz/dataL/sztu12/sztu12/triangulated_lines_nv4_clipped.obj}"
 limap_path="${LIMAP_DIR:-/home/lz/project/limap-old/outputs/sztu12}"
 dataset_name="${NAME:-sztu12}"
+bbox_source="${BBOX_SOURCE:-camera}" # camera or line
 mode="${1:-all}"
 if [[ $# -gt 0 ]]; then
     shift
 fi
 case "$mode" in
     prepare)
-        exec "$script_dir/scripts/custom_demo" --obj "$obj_path" --limap-dir "$limap_path" \
-            --name "$dataset_name" "$@" --prepare-only
+        exec "$script_dir/custom_demo" --obj "$obj_path" --limap-dir "$limap_path" \
+            --name "$dataset_name" --bbox-source "$bbox_source" "$@" --prepare-only
         ;;
     reconstruct)
-        exec "$script_dir/scripts/custom_demo" --name "$dataset_name" "$@"
+        exec "$script_dir/custom_demo" --name "$dataset_name" --bbox-source "$bbox_source" "$@"
         ;;
     all)
-        exec "$script_dir/scripts/custom_demo" --obj "$obj_path" --limap-dir "$limap_path" \
-            --name "$dataset_name" "$@"
+        exec "$script_dir/custom_demo" --obj "$obj_path" --limap-dir "$limap_path" \
+            --name "$dataset_name" --bbox-source "$bbox_source" "$@"
         ;;
     -h|--help|help)
         cat <<'HELP'
@@ -35,7 +36,7 @@ Usage: ./custom.sh [prepare|reconstruct|all] [custom_demo options]
   prepare      Generate JSON and inspection OBJ only.
   reconstruct  Reuse final JSON and run reconstruction.
   all          Prepare input and run reconstruction (default).
-Defaults may be overridden with OBJ, LIMAP_DIR, NAME, PYTHON or CLI options.
+Defaults may be overridden with OBJ, LIMAP_DIR, NAME, BBOX_SOURCE (camera|line), PYTHON or CLI options.
 See scripts/custom.md for inputs, output paths and validation details.
 HELP
         ;;

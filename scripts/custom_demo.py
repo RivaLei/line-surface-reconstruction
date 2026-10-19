@@ -266,6 +266,7 @@ def run_reconstruction(args, input_path, output_dir, env):
     command = [ROOT / 'build/line_based_recons', '-i', input_path, '-o', str(output_dir) + '/']
     for name in ('cp', 'cv', 'ca', 'ce', 'cc'):
         command.extend(['-' + name, getattr(args, name)])
+    command.extend(['--bbox-source', args.bbox_source])
     run(command + ['-' + args.scene, '-sa', '-v'], env)
     return 0
 
@@ -274,6 +275,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--obj', type=Path, default=Path('/home/lz/dataL/sztu12/sztu12/triangulated_lines_nv4_clipped.obj'))
     parser.add_argument('--name', default='sztu12')
+    parser.add_argument('--bbox-source', choices=['camera', 'line'], default='camera',
+                        help='camera: line endpoints and camera centers (default); line: endpoints only, with _line_box output suffix')
     parser.add_argument('--limap-dir', '--limap_dir', '--limap-output', dest='limap_output', type=Path, help='LIMAP output containing finaltracks and imagecols.npy; regenerate per-observation input')
     parser.add_argument('--reuse-final', action='store_true', help='reuse complete final JSON even when LIMAP sources are supplied')
     parser.add_argument('--no-limap', action='store_true', help='disable per-line LIMAP camera observations')
@@ -299,7 +302,8 @@ def main():
     if not all(math.isfinite(v) for point in args.viewpoint for v in point):
         parser.error('viewpoints must be finite')
     data_dir = ROOT / 'data' / args.name
-    output_dir = ROOT / 'result' / ('demo-' + args.name)
+    output_name = 'demo-' + args.name + ('_line_box' if args.bbox_source == 'line' else '')
+    output_dir = ROOT / 'result' / output_name
 
     # 沿用 test_demo.py 的 MOSEK 运行环境，并允许已有环境变量覆盖路径。
     env = os.environ.copy()

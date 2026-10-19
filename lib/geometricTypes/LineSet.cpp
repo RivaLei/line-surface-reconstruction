@@ -4,6 +4,7 @@ using namespace std;
 using Json = nlohmann::json;
 
 LineSet::LineSet() : ObjectSet<Line>(), bbox(CGAL::Bbox_3(DBL_MAX, DBL_MAX, DBL_MAX, -DBL_MAX, -DBL_MAX, -DBL_MAX)),
+                     lineBbox(CGAL::Bbox_3(DBL_MAX, DBL_MAX, DBL_MAX, -DBL_MAX, -DBL_MAX, -DBL_MAX)),
                      maxNbPlanes(-1)
 {
 
@@ -29,12 +30,14 @@ void LineSet::insert(const nlohmann::json &lineJson)
 
     //Update the bounding box
     vector<Point> linePoints = {firstPoint, secondPoint};
+    lineBbox += CGAL::bbox_3(linePoints.begin(), linePoints.end());
     for(const auto& pov: pointOfViews) linePoints.push_back(pov);
     bbox += CGAL::bbox_3(linePoints.begin(), linePoints.end());
 }
 
-CGAL::Bbox_3 LineSet::getBbox(const double factor) const
+CGAL::Bbox_3 LineSet::getBbox(const double factor, bool includeViewpoints) const
 {
+    const auto& bbox = includeViewpoints ? this->bbox : lineBbox;
     double xIncr = (bbox.xmax() - bbox.xmin()) * factor / 2.;
     double yIncr = (bbox.ymax() - bbox.ymin()) * factor / 2.;
     double zIncr = (bbox.zmax() - bbox.zmin()) * factor / 2.;

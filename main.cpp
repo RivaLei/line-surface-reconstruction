@@ -23,6 +23,7 @@ int runMain(int argc, char* argv[])
     opt.add_option("-ca", "--cost_area", "Cost for facet area term", "0");
     opt.add_option("-ce", "--cost_edge", "Cost for edge term", "0.01");
     opt.add_option("-cc", "--cost_corner", "Cost for corner term", "0.01");
+    opt.add_option("-bs", "--bbox-source", "Bounding box source: camera (lines and cameras) or line (endpoints only)", "camera");
     opt.add_option("-vs", "--voxel-size", "Voxel size", "0");
     opt.add_option("-ext", "--exterior", "Exterior scene mode (-ext or -int REQUIRED)");
     opt.add_option("-int", "--interior", "Interior scene mode (-ext or -int REQUIRED)");
@@ -80,6 +81,11 @@ int runMain(int argc, char* argv[])
     double voxel_size      = op::str2double(opt["-vs"]);
     int    maxNumberPlanes = op::str2int(opt["-np"]);
 
+    const string bboxSource = opt["-bs"];
+    if (bboxSource != "camera" && bboxSource != "line")
+        throw runtime_error("--bbox-source must be camera or line");
+    const bool includeViewpoints = bboxSource == "camera";
+
     int checkpointBatch = op::str2int(opt["-cb"]);
     if (checkpointBatch <= 0) throw runtime_error("Checkpoint batch must be positive");
     string checkpointDirectory;
@@ -99,6 +105,7 @@ int runMain(int argc, char* argv[])
         };
         checkpoint::Json identity;
         identity["format"] = 1;
+        identity["bbox_source"] = bboxSource;
         identity["input_hash"] = hashFile(opt["-i"]);
         identity["binary_hash"] = hashFile("/proc/self/exe");
         identity["parameters"] = {cost_primitive, cost_visibility, cost_area, cost_edge, cost_corners, voxel_size, double(maxNumberPlanes), double(force_interior), double(force_exterior)};
@@ -130,7 +137,7 @@ int runMain(int argc, char* argv[])
 
     //Make the plane arrangement, fill it and save it
     double bboxIncreaseFactor = 0.1;
-    PlaneArrangement myArrangement(myLineSet.getBbox(bboxIncreaseFactor), myPrimitiveSet, voxel_size, verbose, checkpointDirectory);
+    PlaneArrangement myArrangement(myLineSet.getBbox(bboxIncreaseFactor, includeViewpoints), myPrimitiveSet, voxel_size, verbose, checkpointDirectory);
 
     // Optional diagnostic geometry: all bounded arrangement facets, before weights
     // and optimization. This is not the reconstructed surface or a restart checkpoint.
